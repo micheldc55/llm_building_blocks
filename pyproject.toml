@@ -1,0 +1,22 @@
+[project]
+name = "llm-building-blocks"
+version = "0.1.0"
+description = "Building an LLM from scratch"
+authors = [{ name = "Michel", email = "micheldc55@gmail.com" }]
+dependencies = [
+    #specify versions:
+    "numpy==2.2.2",
+    "torch==2.6.0",
+    "tokenizers==0.21.0",
+    "pytest==8.3.4",
+    "ruff==0.9.5",
+    "pre-commit==4.1.0"
+]
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 120
+
+[tool.pre-commit]
+default_install_hook_types = ["commit-msg", "pre-commit"]
