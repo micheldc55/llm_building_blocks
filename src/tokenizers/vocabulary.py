@@ -58,11 +58,12 @@ class Vocabulary(BaseModel):
 
 
 if __name__ == "__main__":
-    vocab = Vocabulary(vocab={"hello": 0, "world": 1})
+    vocab = Vocabulary()
     print(vocab)
     print(vocab.to_dict())
     vocab.add("hello")
     print(vocab)
     print(vocab.to_dict())
+    vocab.add("world")
     print(vocab.idx_to_vocab[5])
     print(vocab._revert_mapping(5))
