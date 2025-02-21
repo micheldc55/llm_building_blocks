@@ -29,7 +29,7 @@ class SimplestTokenizer(Tokenizer, BaseModel):
     def fit(self, text: str) -> list[tuple]:
         list_text = list(text)
         merges = []
-        for i in range(self.num_steps):
+        for _ in range(self.num_steps):
             counts_dict = self._create_pair_token_counts(list_text)
 
             if len(counts_dict) <= 1:
@@ -43,6 +43,12 @@ class SimplestTokenizer(Tokenizer, BaseModel):
 
         self.merges = merges
 
+    def encode(self):
+        pass
+
+    def decode(self):
+        pass
+
     @staticmethod
     def _create_pair_token_counts(text_list: list[str]) -> dict[tuple, int]:
         counter_dict = Counter()
@@ -55,7 +61,7 @@ class SimplestTokenizer(Tokenizer, BaseModel):
         return counter_dict
 
     @staticmethod
-    def join_pair_in_word_list(text_list: list[str], pair: tuple) -> list[str]:
+    def _join_pair_in_word_list(text_list: list[str], pair: tuple) -> list[str]:
         new_list = []
         idx = 0
 
