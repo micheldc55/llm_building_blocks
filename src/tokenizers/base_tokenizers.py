@@ -23,12 +23,16 @@ class Tokenizer(ABC, BaseModel):
 
 class SimplestTokenizer(Tokenizer, BaseModel):
     num_steps: int
-    vocab: dict | None
-    merges: list[tuple]
+    vocab: dict | None = None
+    idx_to_vocab: dict | None = None
+    merges: list[tuple] | None = None
 
     def fit(self, text: str) -> list[tuple]:
         list_text = list(text)
         merges = []
+
+        vocab = self._create_base_vocab(text)
+
         for _ in range(self.num_steps):
             counts_dict = self._create_pair_token_counts(list_text)
 
@@ -36,11 +40,11 @@ class SimplestTokenizer(Tokenizer, BaseModel):
                 break
 
             most_freq_pair = max(counts_dict.items(), key=lambda p: p[1])[0]
-
             merges.append(most_freq_pair)
+            list_text = self._join_pair_in_word_list(list_text, most_freq_pair)
 
-            list_text = self.join_pair_in_word_list(list_text, most_freq_pair)
-
+        self.vocab = self._extend_vocab(vocab, merges=merges)
+        self.idx_to_vocab = {v: k for k, v in self.vocab.items()}
         self.merges = merges
 
     def encode(self):
@@ -75,10 +79,28 @@ class SimplestTokenizer(Tokenizer, BaseModel):
                 new_list.append(text_list[idx])
                 idx += 1
 
-            if idx >= len(text_list) - 2:
+            if idx >= len(text_list) - 1:
                 break
 
         return new_list
+
+    @staticmethod
+    def _create_base_vocab(text: str) -> None:
+        sorted_text = sorted(set(text))
+        return {k: i for i, k in enumerate(sorted_text)}
+
+    @staticmethod
+    def _extend_vocab(vocab: dict[str, int], merges: list[tuple]) -> dict[str, int]:
+        base_idx = len(vocab) - 1
+
+        vocab.update(
+            {
+                (subtoken1 + subtoken2): base_idx + i
+                for i, (subtoken1, subtoken2) in enumerate(merges)
+            }
+        )
+
+        return vocab
 
 
 class RegularExpressionTokenizer(Tokenizer, BaseModel):
