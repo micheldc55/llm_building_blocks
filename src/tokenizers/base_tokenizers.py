@@ -1,10 +1,11 @@
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
+from typing import Iterable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from src.tokenizers.vocabulary import Vocabulary
+from src.tokenizers.utils.vocabulary import Vocabulary, VocabularyFactory
 
 
 class Tokenizer(ABC, BaseModel):
@@ -20,12 +21,20 @@ class Tokenizer(ABC, BaseModel):
     def fit(self, texts: list[str]) -> None:
         pass
 
+    @abstractmethod
+    def save(self, path: str) -> None:
+        pass
 
-class SimplestTokenizer(Tokenizer, BaseModel):
+    @abstractmethod
+    def load(self, path: str) -> None:
+        pass
+
+
+class WPETokenizer(Tokenizer, BaseModel):
     num_steps: int
-    vocab: dict | None = None
-    idx_to_vocab: dict | None = None
-    merges: list[tuple] | None = None
+    vocab_type: str = Field(default="slim")
+    vocab: Vocabulary = Field(init=False, default_factory=Vocabulary)
+    merges: list[tuple] = Field(init=False, default_factory=list)
 
     def fit(self, text: str) -> list[tuple]:
         list_text = list(text)
@@ -40,17 +49,32 @@ class SimplestTokenizer(Tokenizer, BaseModel):
                 break
 
             most_freq_pair = max(counts_dict.items(), key=lambda p: p[1])[0]
+
             merges.append(most_freq_pair)
             list_text = self._join_pair_in_word_list(list_text, most_freq_pair)
 
         self.vocab = self._extend_vocab(vocab, merges=merges)
-        self.idx_to_vocab = {v: k for k, v in self.vocab.items()}
         self.merges = merges
 
-    def encode(self):
+        return merges
+
+    def encode(self, text: str) -> list[int]:
+        text_list = list(text)
+
+        for merge in self.merges:
+            text_list = self._join_pair_in_word_list(text_list, merge)
+
+        return [self.vocab[token] for token in text_list]
+
+    def decode(self, token_ids: Iterable[int] | int) -> str:
+        if isinstance(token_ids, int):
+            return self.vocab.get_token_from_id(token_ids)
+        return "".join(self.vocab.get_token_from_id(token_id) for token_id in token_ids)
+
+    def save(self, path: str) -> None:
         pass
 
-    def decode(self):
+    def load(self, path: str) -> None:
         pass
 
     @staticmethod
@@ -59,7 +83,6 @@ class SimplestTokenizer(Tokenizer, BaseModel):
 
         for i in range(len(text_list) - 1):
             pair = (text_list[i], text_list[i + 1])
-
             counter_dict[pair] += 1
 
         return counter_dict
@@ -69,7 +92,7 @@ class SimplestTokenizer(Tokenizer, BaseModel):
         new_list = []
         idx = 0
 
-        while True:
+        while idx < len(text_list) - 1:
             candidate_pair = (text_list[idx], text_list[idx + 1])
 
             if candidate_pair == pair:
@@ -79,57 +102,84 @@ class SimplestTokenizer(Tokenizer, BaseModel):
                 new_list.append(text_list[idx])
                 idx += 1
 
-            if idx >= len(text_list) - 1:
-                break
+        if idx < len(text_list):
+            new_list.append(text_list[idx])
 
         return new_list
 
     @staticmethod
-    def _create_base_vocab(text: str) -> None:
+    def _create_base_vocab(text: str) -> dict:
+        vocab = VocabularyFactory.create(vocab_type="slim")
         sorted_text = sorted(set(text))
-        return {k: i for i, k in enumerate(sorted_text)}
+        vocab.add_tokens(sorted_text)
+        return vocab
 
     @staticmethod
     def _extend_vocab(vocab: dict[str, int], merges: list[tuple]) -> dict[str, int]:
-        base_idx = len(vocab) - 1
-
-        vocab.update(
-            {
-                (subtoken1 + subtoken2): base_idx + i
-                for i, (subtoken1, subtoken2) in enumerate(merges)
-            }
-        )
+        vocab.add_tokens([subtoken1 + subtoken2 for subtoken1, subtoken2 in merges])
 
         return vocab
 
 
+# TODO Implement BPE Tokenizer
+# class BPETokenizer(Tokenizer, BaseModel):
+#     vocab: dict | None = None
+#     idx_to_vocab: dict | None = None
+#     merges: list[tuple] | None = None
+
+
 class RegularExpressionTokenizer(Tokenizer, BaseModel):
     pattern: str
-    vocab: Vocabulary | None = None
+    vocab_type: str = Field(default="slim")
+    vocab: Vocabulary = Field(init=False, default_factory=Vocabulary)
 
     def fit(self, texts: list[str]) -> None:
-        vocabulary = Vocabulary()
+        vocabulary = VocabularyFactory.create(vocab_type=self.vocab_type)
+
         for text in texts:
             matches = re.finditer(self.pattern, text)
-            vocabulary.add([match.group() for match in matches])
+            vocabulary.add_tokens([match.group() for match in matches])
 
         self.vocab = vocabulary
 
     def encode(self, text: str) -> list[int]:
         return [self.vocab[match.group()] for match in re.finditer(self.pattern, text)]
 
-    def decode(self, token_ids: list[int] | int) -> str:
+    def decode(self, token_ids: list[int] | int, join_token: str | None = None) -> str:
+        if join_token is None:
+            join_token = " "
+
         if isinstance(token_ids, list):
-            return "".join(self.vocab.idx_to_vocab[token_id] for token_id in token_ids)
+            return join_token.join(
+                self.vocab.get_token_from_id(token_id) for token_id in token_ids
+            )
         else:
-            return self.vocab.idx_to_vocab[token_ids]
+            return self.vocab.get_token_from_id(token_ids)
+
+    def save(self, path: str) -> None:
+        pass
+
+    def load(self, path: str) -> None:
+        pass
 
 
 if __name__ == "__main__":
     tokenizer = RegularExpressionTokenizer(pattern=r"\w+")
-    tokenizer.fit(["Hello, world!", "Hello, world!"])
+    tokenizer.fit(["Hello, world! Nice to meet you, Hello"])
     print(tokenizer.vocab)
     print(tokenizer.encode("Hello, world!"))
-    print(tokenizer.decode([1, 2, 3]))
+    print(tokenizer.decode([0, 1, 2]))
 
-    tokenizer_simple = SimplestTokenizer()
+    text = """_The characteristics of Miss Austen's humour are so subtle and delicate
+that they are, perhaps, at all times easier to apprehend than to
+express, and at any particular time likely to be differently
+apprehended by different persons. To me this humour seems to possess a
+greater affinity, on the whole, to that of Addison than to any other of
+the numerous species of this great British genus. It's best work it's not worse."""
+
+    tokenizer = WPETokenizer(num_steps=100)
+    tokenizer.fit(text)
+    print()
+    print(tokenizer.vocab)
+    print(tokenizer.encode(text))
+    print(tokenizer.decode(tokenizer.encode(text)))
